@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14213d">
+<title>Fita – Leitor de números</title>
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#14213d;--mut:#5b6678;--line:#d5dbe3;--acc:#0b7a75;--accT:#fff;--bad:#b3261e;--tape:#fffdf3}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1420;--card:#18202f;--ink:#e8edf5;--mut:#9aa6ba;--line:#2b3547;--acc:#3cc4bb;--accT:#06201e;--bad:#ff8a80;--tape:#1b2332}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,sans-serif;padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 96px)}
+header{background:#14213d;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+header h1{font:700 1.15rem Georgia,serif;margin:0}
+header small{opacity:.8;display:block;font-size:.75rem}
+main{max-width:640px;margin:0 auto;padding:12px}
+button,input{font:inherit;color:inherit}
+button{min-height:48px;border-radius:10px;border:1px solid var(--line);background:var(--card);padding:0 14px;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.pri{background:var(--acc);color:var(--accT);border:0;font-weight:700;width:100%;min-height:56px;font-size:1.05rem}
+.row{display:flex;gap:8px;margin:8px 0}.row>*{flex:1}
+input{width:100%;min-height:48px;border-radius:10px;border:1px solid var(--line);background:var(--card);padding:0 12px}
+.sum{background:var(--tape);border:1px dashed var(--mut);border-radius:6px;padding:12px 14px;margin:12px 0;font-variant-numeric:tabular-nums}
+.sum div{display:flex;justify-content:space-between;color:var(--mut)}
+.sum .tot{color:var(--ink);font:700 1.7rem ui-monospace,Menlo,monospace;margin-top:4px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center}
+.item .v{font:600 1.1rem ui-monospace,Menlo,monospace}.item .s{font:700 1.1rem ui-monospace,Menlo,monospace;text-align:right}
+.item small{color:var(--mut)}
+.qty{display:flex;align-items:center;gap:6px}.qty button{width:48px;padding:0;font-size:1.4rem}.qty input{width:64px;text-align:center}
+.del{color:var(--bad);justify-self:end}
+.zero{opacity:.65}
+#st{font-size:.8rem;margin:4px 2px;color:var(--mut)}#st.err{color:var(--bad)}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:8px 12px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;max-width:640px;margin:auto}
+.bar button{flex:1}
+dialog{border:0;border-radius:14px;padding:16px;width:min(94vw,420px);background:var(--card);color:var(--ink)}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+video,canvas.pv{width:100%;border-radius:10px;background:#000;max-height:50vh;object-fit:cover}
+.hist{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.empty{text-align:center;color:var(--mut);padding:28px 8px}
+</style>
+</head>
+<body>
+<header><div><h1>Fita</h1><small id="sess"></small></div><button id="bHist" aria-label="Histórico">Histórico</button></header>
+<main>
+  <button class="pri" id="bCam">Ler número com a câmera</button>
+  <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
+  <div class="row"><button id="bMan">Adicionar manualmente</button><button id="bLive">Câmera ao vivo</button></div>
+  <input id="q" type="search" placeholder="Buscar item" aria-label="Buscar item">
+  <div class="sum" aria-live="polite">
+    <div><span>Itens ativos</span><b id="nIt">0</b></div>
+    <div><span>Unidades</span><b id="nUn">0</b></div>
+    <div class="tot" id="tot">R$ 0,00</div>
+    <div style="font-size:.75rem"><span id="upd">—</span></div>
+  </div>
+  <div id="st" role="status">Pronto.</div>
+  <div id="list"></div>
+</main>
+<div class="bar"><button id="bSave">Salvar sessão</button><button id="bNew">Finalizar e nova</button></div>
+
+<!-- Câmera -->
+<dialog id="dCam">
+  <h2 style="margin:0 0 8px">Ler número</h2>
+  <video id="vid" playsinline muted></video>
+  <canvas id="cv" class="pv" hidden></canvas>
+  <div id="camMsg" style="margin:8px 0;color:var(--mut)">Aponte para o número e toque em Capturar.</div>
+  <label id="confBox" hidden>Número reconhecido (corrija se necessário)
+    <input id="recog" inputmode="decimal"></label>
+  <div class="row" style="margin-top:10px">
+    <button id="bCancel">Cancelar</button>
+    <button id="bShot" class="pri" style="min-height:48px">Capturar</button>
+    <button id="bOk" class="pri" style="min-height:48px" hidden>Adicionar</button>
+  </div>
+</dialog>
+<!-- Manual / editar valor -->
+<dialog id="dMan">
+  <h2 id="manT" style="margin:0 0 8px">Adicionar número</h2>
+  <input id="manV" inputmode="decimal" placeholder="Ex.: 25,00" aria-label="Valor">
+  <div id="manE" style="color:var(--bad);min-height:1.4em"></div>
+  <div class="row"><button id="manC">Cancelar</button><button id="manOk" class="pri" style="min-height:48px">Salvar</button></div>
+</dialog>
+<!-- Confirmar exclusão -->
+<dialog id="dDel"><p id="delT"></p>
+  <div class="row"><button id="delC">Cancelar</button><button id="delOk" class="pri" style="background:var(--bad);min-height:48px">Excluir</button></div></dialog>
+<!-- Histórico -->
+<dialog id="dHist"><h2 style="margin:0 0 8px">Histórico</h2><div id="histL"></div>
+  <div class="row"><button id="histC">Fechar</button></div></dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+"use strict";
+/* ===== Dinheiro em centavos (inteiros) – sem ponto flutuante ===== */
+const fmt=c=>(c<0?"-":"")+"R$ "+(Math.abs(c)/100).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtN=c=>(c/100).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+function parseBR(s){ // "1.234,56" | "25" | "25,5" | "25.50" -> centavos ou null
+  s=String(s||"").trim().replace(/\s/g,"").replace(/^R\$/,"");
+  if(!s)return null;
+  if(s.includes(",")) s=s.replace(/\./g,"").replace(",",".");
+  else if(/^\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,"");
+  if(!/^\d+(\.\d{1,2})?$/.test(s))return null;
+  const [i,d=""]=s.split(".");
+  return parseInt(i,10)*100+parseInt((d+"00").slice(0,2),10);
+}
+function extractNumbers(text){ // candidatos do texto do OCR
+  return (text.match(/\d[\d.,]*/g)||[]).map(t=>t.replace(/[.,]+$/,"")).filter(t=>parseBR(t)!==null);
+}
+/* ===== Estado + persistência (localStorage) ===== */
+const KEY="fita.v1", uid=()=>crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random());
+let db;
+function load(){try{db=JSON.parse(localStorage.getItem(KEY))}catch(e){db=null}
+  if(!db||!db.sessions)db={sessions:[],cur:null};
+  if(!db.sessions.find(s=>s.id===db.cur&&s.status==="aberta"))newSession();}
+function newSession(){const s={id:uid(),title:"Sessão "+new Date().toLocaleString("pt-BR"),status:"aberta",items:[],created:Date.now(),updated:Date.now()};
+  db.sessions.unshift(s);db.cur=s.id;}
+const cur=()=>db.sessions.find(s=>s.id===db.cur);
+const st=(m,e)=>{const el=document.getElementById("st");el.textContent=m;el.className=e?"err":""};
+function persist(){const s=cur();if(s)s.updated=Date.now();
+  try{localStorage.setItem(KEY,JSON.stringify(db));st("Salvo às "+new Date().toLocaleTimeString("pt-BR"));return true}
+  catch(e){st("Erro ao salvar: armazenamento cheio ou bloqueado.",true);return false}}
+/* ===== Regras ===== */
+const active=s=>s.items.filter(i=>!i.deleted);
+const sub=i=>i.value*i.qty;
+function addItem(value,source){cur().items.unshift({id:uid(),value,qty:1,source,at:Date.now(),deleted:false});persist();render();}
+function setQty(id,q){const i=cur().items.find(x=>x.id===id);if(!i)return;q=Math.max(0,Math.floor(Number(q)||0));i.qty=Math.min(q,1e6);persist();render();}
+/* ===== Render ===== */
+const $=id=>document.getElementById(id);
+function render(){
+  const s=cur(),its=active(s),term=$("q").value.trim().toLowerCase();
+  $("sess").textContent=s.title;
+  $("nIt").textContent=its.length;
+  $("nUn").textContent=its.reduce((a,i)=>a+i.qty,0).toLocaleString("pt-BR");
+  $("tot").textContent=fmt(its.reduce((a,i)=>a+sub(i),0));
+  $("upd").textContent="Atualizado em "+new Date(s.updated).toLocaleString("pt-BR");
+  const L=$("list");L.innerHTML="";
+  const shown=its.filter(i=>!term||fmtN(i.value).includes(term)||String(i.value/100).includes(term));
+  if(!shown.length){L.innerHTML='<div class="empty">'+(its.length?"Nenhum item encontrado.":"Nenhum número ainda. Toque em “Ler número com a câmera”.")+"</div>";return}
+  shown.forEach(i=>{
+    const d=document.createElement("div");d.className="item"+(i.qty===0?" zero":"");
+    d.innerHTML=`<div><div class="v">${fmt(i.value)}</div><small>${i.source==="camera"?"Câmera":"Manual"} · ${new Date(i.at).toLocaleTimeString("pt-BR")}</small></div>
+    <div class="s">${fmt(sub(i))}</div>
+    <div class="qty"><button aria-label="Diminuir">−</button><input type="number" min="0" step="1" inputmode="numeric" value="${i.qty}" aria-label="Quantidade"><button aria-label="Aumentar">+</button></div>
+    <div style="justify-self:end"><button class="ed">Editar</button> <button class="del">Excluir</button></div>`;
+    const [m,p]=d.querySelectorAll(".qty button"),inp=d.querySelector(".qty input");
+    m.onclick=()=>setQty(i.id,i.qty-1);p.onclick=()=>setQty(i.id,i.qty+1);
+    inp.onchange=()=>setQty(i.id,inp.value);
+    d.querySelector(".ed").onclick=()=>openMan(i.id);
+    d.querySelector(".del").onclick=()=>askDel(i.id);
+    L.appendChild(d);});
+}
+/* ===== Manual / editar ===== */
+let editId=null;
+function openMan(id){editId=id||null;$("manT").textContent=id?"Editar valor":"Adicionar número";
+  $("manV").value=id?fmtN(cur().items.find(x=>x.id===id).value):"";$("manE").textContent="";$("dMan").showModal();$("manV").focus();}
+$("bMan").onclick=()=>openMan();$("manC").onclick=()=>$("dMan").close();
+$("manOk").onclick=()=>{const c=parseBR($("manV").value);
+  if(c===null){$("manE").textContent="Digite um número válido, como 25,00.";return}
+  if(editId){cur().items.find(x=>x.id===editId).value=c;persist();render()}else addItem(c,"manual");
+  $("dMan").close();};
+$("manV").onkeydown=e=>{if(e.key==="Enter")$("manOk").click()};
+/* ===== Exclusão ===== */
+let delId=null;
+function askDel(id){delId=id;$("delT").textContent="Excluir o item de "+fmt(cur().items.find(x=>x.id===id).value)+"?";$("dDel").showModal();}
+$("delC").onclick=()=>$("dDel").close();
+$("delOk").onclick=()=>{const i=cur().items.find(x=>x.id===delId);if(i){i.deleted=true;i.deletedAt=Date.now()}persist();render();$("dDel").close();};
+/* ===== Câmera + OCR ===== */
+let stream=null,worker=null,lastRead=null;
+async function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$("vid").srcObject=null;}
+function resetCam(){$("vid").hidden=false;$("cv").hidden=true;$("confBox").hidden=true;$("bOk").hidden=true;$("bShot").hidden=false;$("bShot").disabled=false;$("camMsg").textContent="Aponte para o número e toque em Capturar.";}
+$("bLive").onclick=async()=>{
+  resetCam();$("dCam").showModal();
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$("camMsg").textContent="Câmera indisponível neste navegador ou sem HTTPS. Use “Adicionar manualmente”.";$("bShot").disabled=true;return}
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}},audio:false});
+    $("vid").srcObject=stream;await $("vid").play();}
+  catch(e){$("camMsg").textContent="Sem permissão para usar a câmera. Libere o acesso nas configurações do navegador ou digite o valor manualmente.";$("bShot").disabled=true;}
+};
+$("dCam").addEventListener("close",stopCam);
+$("bCancel").onclick=()=>$("dCam").close();
+$("bCam").onclick=()=>$("fileCam").click(); // abre o app de câmera nativo do Android
+$("fileCam").onchange=async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f)return;
+  resetCam();$("dCam").showModal();
+  try{const b=await createImageBitmap(f),k=Math.min(1,1600/Math.max(b.width,b.height));
+    drawProc(b,Math.round(b.width*k),Math.round(b.height*k));await ocr();}
+  catch(err){$("vid").hidden=true;$("bShot").hidden=true;$("camMsg").textContent="Não foi possível abrir a foto. Cancele e tente de novo ou digite manualmente.";}
+};
+$("bShot").onclick=()=>{const v=$("vid");if(!v.videoWidth)return;drawProc(v,v.videoWidth,v.videoHeight);return ocr();};
+function drawProc(src,w,h){
+  const c=$("cv");c.width=w;c.height=h;
+  const x=c.getContext("2d");x.drawImage(src,0,0,w,h);
+  const im=x.getImageData(0,0,w,h),d=im.data;
+  for(let k=0;k<d.length;k+=4){let g=.299*d[k]+.587*d[k+1]+.114*d[k+2];g=Math.max(0,Math.min(255,(g-128)*1.5+128));d[k]=d[k+1]=d[k+2]=g}
+  x.putImageData(im,0,0);
+  $("vid").hidden=true;c.hidden=false;$("bShot").disabled=true;$("camMsg").textContent="Reconhecendo…";
+}
+async function ocr(){const c=$("cv");
+  try{
+    if(!window.Tesseract)throw new Error("OCR não carregou");
+    if(!worker){worker=await Tesseract.createWorker("eng");await worker.setParameters({tessedit_char_whitelist:"0123456789.,-"});}
+    const r=await worker.recognize(c);
+    const cands=extractNumbers(r.data.text);
+    if(!cands.length)throw new Error("vazio");
+    const conf=Math.round(r.data.confidence);
+    $("recog").value=cands[0];$("confBox").hidden=false;$("bOk").hidden=false;$("bShot").hidden=true;
+    $("camMsg").textContent="Confiança "+conf+"%. "+(conf<70?"Baixa: confira o valor. ":"")+(cands.length>1?"Outros lidos: "+cands.slice(1,4).join(" · "):"");
+    $("recog").focus();
+  }catch(e){
+    resetCam();$("camMsg").textContent="Não foi possível reconhecer um número. Aproxime, melhore a luz e capture de novo, ou digite manualmente.";
+    if(!stream){$("vid").hidden=true;$("bShot").hidden=true;$("camMsg").textContent="Não reconheci um número. Toque em Cancelar, tire outra foto mais de perto e com boa luz, ou digite manualmente.";}
+  }
+};
+$("bOk").onclick=()=>{const c=parseBR($("recog").value);
+  if(c===null){$("camMsg").textContent="Valor inválido. Corrija o número, como 25,00.";return}
+  const key=c+"|"+Math.floor(Date.now()/1500);if(lastRead===key)return; // evita duplo toque
+  lastRead=key;addItem(c,"camera");$("dCam").close();};
+/* ===== Sessões ===== */
+$("bSave").onclick=()=>{if(persist())render()};
+$("bNew").onclick=()=>{const s=cur();if(!active(s).length&&!confirm("A sessão está vazia. Criar nova mesmo assim?"))return;
+  s.status="finalizada";s.finalized=Date.now();newSession();persist();render();st("Sessão finalizada e guardada no histórico.");};
+$("bHist").onclick=()=>{const L=$("histL");L.innerHTML="";
+  db.sessions.forEach(s=>{const its=active(s),t=its.reduce((a,i)=>a+sub(i),0);
+    const d=document.createElement("div");d.className="hist";
+    d.innerHTML=`<div><b>${s.title}</b><br><small>${its.length} itens · ${s.status}</small></div><div style="text-align:right"><b>${fmt(t)}</b><br></div>`;
+    if(s.id!==db.cur){const b=document.createElement("button");b.textContent="Abrir";b.onclick=()=>{db.cur=s.id;s.status="aberta";persist();render();$("dHist").close()};d.lastChild.appendChild(b)}
+    L.appendChild(d)});
+  $("dHist").showModal();};
+$("histC").onclick=()=>$("dHist").close();
+$("q").oninput=render;
+window.addEventListener("online",()=>st("Online."));window.addEventListener("offline",()=>st("Sem internet: o OCR pode falhar; a digitação manual continua funcionando.",true));
+load();persist();render();
+</script>
+</body>
+</html>
